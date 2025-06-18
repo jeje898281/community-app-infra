@@ -5,28 +5,44 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
-    ports:
-      - "5432:5432"
     volumes:
       - db-data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432" 
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "${POSTGRES_USER}", "-d", "${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - service-net
+      - edge-net
 
   redis:
     image: redis:7-alpine
     container_name: redis
-    restart: unless-stopped
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis-data:/data
+    restart: always
+    command: redis-server --save 60 1 --loglevel warning
+    networks:
+      - service-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    tmpfs:
+      - /data
 
   worker:
     build:
       context: ./worker
-      dockerfile: Dockerfile.dev
+      dockerfile: Dockerfile.prod
     container_name: report_worker
     restart: unless-stopped
+    networks:
+      - service-net
     env_file:
-      - .env
+      - .env.prod
     depends_on:
       - redis
     volumes:
@@ -35,11 +51,13 @@ services:
   backend:
     build:
       context: ../backend          
-      dockerfile: Dockerfile.dev   
+      dockerfile: Dockerfile.prod  
     working_dir: /app
-    command: npx nodemon src/index.js
-    volumes:
-      - ../backend:/app            
+    container_name: backend
+    command: node src/index.js
+    networks:
+      - service-net
+      - edge-net        
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       REDIS_URL: ${REDIS_URL}
@@ -55,23 +73,27 @@ services:
     ports:
       - "${BACKEND_PORT}:3000"
     depends_on:
-      - db
-      - redis
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
   frontend:
     build:
       context: ../frontend
-      dockerfile: Dockerfile.dev
-    working_dir: /app
-    command: sh -c "npm install && npm run dev -- --host"
-    volumes:
-      - ../frontend:/app
+      dockerfile: Dockerfile.prod
+    container_name: infra-frontend
     ports:
-      - "${FRONTEND_PORT}:5173"
-    depends_on:
-      - backend
-
+      - "${FRONTEND_PORT}:80"
+    networks:
+      - edge-net
 
 volumes:
   db-data:
   redis-data:
+
+networks:
+  edge-net:
+    external: true  
+  service-net:
+    internal: true
