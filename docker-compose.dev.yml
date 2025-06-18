@@ -1,5 +1,5 @@
 # docker-compose.dev.yml
-# 適用於本機開發環境。支援熱重載、健康檢查、清楚的 service 分層與命名。
+# 適用於本機開發環境。支援熱重載、健康檢查、分層清楚、可擴充。
 
 services:
   ###########################################################################
@@ -7,32 +7,37 @@ services:
   ###########################################################################
   db:
     image: postgres:16
+    env_file:
+      - .env.dev
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
-      POSTGRES_DB: ${POSTGRES_DB:-app_db}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
     ports:
-      - "127.0.0.1:5432:5432"  # 僅開放給本機連線
+      - "127.0.0.1:5432:5432"
     volumes:
       - db-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-app_db}"]
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}" ]
       interval: 10s
       timeout: 5s
       retries: 5
     networks:
       - service-net
+      - dev-net
 
   ###########################################################################
-  # 🐏 Redis 快取 / 佇列中介
+  # 🐏 Redis
   ###########################################################################
   redis:
     image: redis:7-alpine
+    env_file:
+      - .env.dev
     restart: unless-stopped
     volumes:
       - redis-data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "-h", "localhost", "ping"]
+      test: [ "CMD", "redis-cli", "-h", "localhost", "ping" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -40,15 +45,15 @@ services:
       - service-net
 
   ###########################################################################
-  # 👷 Worker（BullMQ / Celery 背景任務）
+  # 👷 Worker
   ###########################################################################
   worker:
     build:
       context: ./worker
       dockerfile: Dockerfile.dev
-    restart: unless-stopped
     env_file:
       - .env.dev
+    restart: unless-stopped
     depends_on:
       redis:
         condition: service_healthy
@@ -58,7 +63,7 @@ services:
       - service-net
 
   ###########################################################################
-  # 🔙 Backend (Node.js + Express/Fastify)
+  # 🔙 Backend
   ###########################################################################
   backend:
     build:
@@ -66,15 +71,15 @@ services:
       dockerfile: Dockerfile.dev
     working_dir: /app
     command: npx nodemon src/index.js
-    restart: unless-stopped
     env_file:
       - .env.dev
     environment:
-      DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-app_db}
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       REDIS_URL: redis://redis:6379
       PORT: 3000
     ports:
-      - "${BACKEND_PORT:-3000}:3000"
+      - "3000:3000"
+    restart: unless-stopped
     depends_on:
       db:
         condition: service_healthy
@@ -87,7 +92,7 @@ services:
       - edge-net
 
   ###########################################################################
-  # 🌐 Frontend (React + Vite)
+  # 🌐 Frontend
   ###########################################################################
   frontend:
     build:
@@ -95,8 +100,10 @@ services:
       dockerfile: Dockerfile.dev
     working_dir: /app
     command: sh -c "npm install && npm run dev -- --host"
+    env_file:
+      - .env.dev
     ports:
-      - "${FRONTEND_PORT:-5173}:5173"
+      - "${FRONTEND_PORT}:5173"
     volumes:
       - ../frontend:/app
     depends_on:
@@ -104,19 +111,15 @@ services:
     networks:
       - edge-net
 
-###############################################################################
-# 📦 Volume 定義（資料持久化）
-###############################################################################
 volumes:
   db-data:
   redis-data:
 
-###############################################################################
-# 🌐 Network 定義（內外部隔離）
-###############################################################################
+
 networks:
   edge-net:
-    external: true    # 需先用 `docker network create edge-net` 建立
+    external: true
   service-net:
-    internal: true    # 僅限本 compose 內部使用
-
+    internal: true
+  dev-net:
+    external: true
