@@ -1,2 +1,2 @@
 #!/bin/bash
-docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
+docker compose -p community-prod -f docker-compose.prod.yml --env-file .env.prod up -d --build --force-recreate

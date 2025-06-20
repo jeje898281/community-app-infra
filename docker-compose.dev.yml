@@ -89,7 +89,7 @@ services:
       - ../backend:/app
     networks:
       - service-net
-      - edge-net
+      - dev-net
 
   ###########################################################################
   # 🌐 Frontend
@@ -109,7 +109,7 @@ services:
     depends_on:
       - backend
     networks:
-      - edge-net
+      - dev-net
 
 volumes:
   db-data:
@@ -117,8 +117,6 @@ volumes:
 
 
 networks:
-  edge-net:
-    external: true
   service-net:
     internal: true
   dev-net:
