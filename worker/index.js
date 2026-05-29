@@ -1,13 +1,12 @@
-// index.js
 require('dotenv').config();
 const { Worker } = require('bullmq');
 const IORedis = require('ioredis');
 const nodemailer = require('nodemailer');
 
-// 1. 連到 Redis
-const connection = new IORedis(process.env.REDIS_URL);
+const connection = new IORedis(process.env.REDIS_URL, {
+  maxRetriesPerRequest: null,
+});
 
-// 2. 建立郵件傳送器
 const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST,
   port: +process.env.SMTP_PORT,
@@ -18,7 +17,6 @@ const transporter = nodemailer.createTransport({
   },
 });
 
-// 3. 訂閱 notification 隊列
 const notificationWorker = new Worker(
   'notification',
   async job => {
